@@ -15,6 +15,8 @@ router = APIRouter()
 PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "extraction_prompt.txt"
 SYSTEM_PROMPT = PROMPT_PATH.read_text()
 
+EXTRACT_MODEL = "claude-opus-4-5"
+
 
 class Profile(BaseModel):
     isf: float = 2.8
@@ -51,16 +53,38 @@ class ExtractResponse(BaseModel):
 def extract(req: ExtractRequest):
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
+        raise HTTPException(
+            status_code=503,
+            detail="Extraction service temporarily unavailable",
+        )
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": req.text}],
-    )
+    print(f"Calling Claude with model: {EXTRACT_MODEL}")
+
+    try:
+        message = client.messages.create(
+            model=EXTRACT_MODEL,
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": req.text}],
+        )
+    except anthropic.BadRequestError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not parse input: {str(e)}",
+        ) from e
+    except anthropic.APIError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Extraction service temporarily unavailable",
+        ) from e
+    except Exception as e:
+        print(f"Extract error: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail="Could not process input. Please rephrase.",
+        ) from e
 
     raw = message.content[0].text.strip()
 

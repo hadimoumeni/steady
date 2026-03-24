@@ -65,7 +65,7 @@ extract_payload = {
 
 resp = requests.post(f"{BASE}/extract", json=extract_payload)
 
-if resp.status_code == 500 and "ANTHROPIC_API_KEY" in resp.text:
+if resp.status_code == 503 and "temporarily unavailable" in resp.text:
     print("  ⚠ Skipped — ANTHROPIC_API_KEY not set")
     print("  (Set it in backend/.env to test this endpoint)\n")
     extract_ok = False
