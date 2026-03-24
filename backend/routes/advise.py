@@ -81,6 +81,27 @@ class AdviseResponse(BaseModel):
         ...,
         description='Traffic-light band: one of "safe", "caution", "danger"',
     )
+    severity_label: str = Field(
+        ...,
+        description="Short headline for the traffic-light band (plain English)",
+    )
+    immediate_step: str = Field(
+        ...,
+        description="Single clearest action to take first",
+    )
+    recheck_minutes: int = Field(..., description="Suggested minutes until next glucose check")
+    backup_step: str = Field(
+        ...,
+        description="If things do not improve after the recheck window",
+    )
+    escalation: str = Field(
+        ...,
+        description="Emergency guidance when oral treatment is unsafe",
+    )
+    late_hypo_warning: str | None = Field(
+        None,
+        description="Optional bedtime / delayed-hypo note after long activity",
+    )
     treatment_options: list[TreatmentOption]
     timeline: list[TimelineEvent]
     conclusion: str
@@ -158,6 +179,60 @@ def get_treatment_options(severity: str, req: AdviseRequest) -> list[TreatmentOp
 # ---------------------------------------------------------------------------
 # Timeline — built from simulation data, no Claude
 # ---------------------------------------------------------------------------
+
+BAND_HEADLINE = {
+    "safe": "On track for activity",
+    "caution": "Plan carbs or extra checks",
+    "danger": "Treat glucose before activity",
+}
+
+BACKUP_STEP = (
+    "If glucose has not improved after the recheck time, give another 10–15g fast-acting carbs "
+    "and contact your diabetes team for next steps."
+)
+
+ESCALATION_STEP = (
+    "If the child is unconscious, having seizures, or cannot swallow, do not give food by mouth. "
+    "Call emergency services immediately."
+)
+
+
+def build_action_plan(internal: str, band: str, req: AdviseRequest) -> dict:
+    """Deterministic headlines + timing — no LLM."""
+    severity_label = BAND_HEADLINE.get(band, BAND_HEADLINE["safe"])
+
+    if internal == "critical":
+        immediate = "Give 15–20g fast-acting carbs now and stop strenuous activity."
+        recheck = 10
+    elif internal == "severe":
+        immediate = "Give about 15g fast carbs; delay vigorous activity until glucose is safer."
+        recheck = 10
+    elif internal == "moderate":
+        immediate = "Consider 10–15g carbs before starting; reduce intensity if glucose keeps falling."
+        recheck = 20
+    elif internal == "mild":
+        immediate = "A small snack (about 5–10g carbs) may help if exercise is starting soon."
+        recheck = 15
+    else:
+        immediate = "Trajectory looks acceptable; keep usual monitoring and follow your care plan."
+        recheck = 30
+
+    late = None
+    if req.late_hypo_risk:
+        late = (
+            "After longer aerobic or mixed activity, glucose can fall hours later. "
+            "Consider a bedtime check or slow snack if your team agrees."
+        )
+
+    return {
+        "severity_label": severity_label,
+        "immediate_step": immediate,
+        "recheck_minutes": recheck,
+        "backup_step": BACKUP_STEP,
+        "escalation": ESCALATION_STEP,
+        "late_hypo_warning": late,
+    }
+
 
 def build_timeline(req: AdviseRequest) -> list[TimelineEvent]:
     events = []
@@ -252,9 +327,16 @@ def advise(req: AdviseRequest):
     timeline = build_timeline(req)
     note = ISPAD_NOTES[band]
     conclusion = get_conclusion_sync(internal, req, treatment_options, timeline)
+    plan = build_action_plan(internal, band, req)
 
     return AdviseResponse(
         severity=band,
+        severity_label=plan["severity_label"],
+        immediate_step=plan["immediate_step"],
+        recheck_minutes=plan["recheck_minutes"],
+        backup_step=plan["backup_step"],
+        escalation=plan["escalation"],
+        late_hypo_warning=plan["late_hypo_warning"],
         treatment_options=treatment_options,
         timeline=timeline,
         conclusion=conclusion or FALLBACK_CONCLUSION,
@@ -270,10 +352,17 @@ def advise_stream(req: AdviseRequest):
     treatment_options = get_treatment_options(internal, req)
     timeline = build_timeline(req)
     note = ISPAD_NOTES[band]
+    plan = build_action_plan(internal, band, req)
 
     def sse_generator():
         structured = {
             "severity": band,
+            "severity_label": plan["severity_label"],
+            "immediate_step": plan["immediate_step"],
+            "recheck_minutes": plan["recheck_minutes"],
+            "backup_step": plan["backup_step"],
+            "escalation": plan["escalation"],
+            "late_hypo_warning": plan["late_hypo_warning"],
             "treatment_options": [t.model_dump() for t in treatment_options],
             "timeline": [e.model_dump() for e in timeline],
             "ispad_note": note,
