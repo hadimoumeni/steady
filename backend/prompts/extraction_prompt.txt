@@ -28,3 +28,10 @@ Rules:
 - Infer intensity from descriptions: gentle/light/easy = 0.4, normal/moderate = 1.0, hard/intense/competitive = 1.6
 - Convert all units: mg/dL to mmol/L divide by 18, oz to grams multiply by 28
 - Do not hallucinate values. Only extract what is stated or clearly implied.
+
+CRITICAL TIMING RULES:
+- "X units [insulin] Y minutes/hours ago" → mins_since_insulin = Y (converted to minutes). This is NOT the meal timing.
+- "had [food]" with no time mentioned → mins_since_meal = 0 (eating now or just ate)
+- "had [food] X minutes/hours ago" → mins_since_meal = X (converted to minutes)
+- If the text says "2 units NovoRapid 90 minutes ago" and separately mentions food with no timing: mins_since_meal = 0, mins_since_insulin = 90
+- These two fields are completely independent. Never assign the same time value to both unless the text explicitly states both happened at the same time.
