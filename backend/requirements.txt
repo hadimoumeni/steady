@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+scipy
+numpy
+anthropic
+python-dotenv
+pydantic
