@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 import anthropic
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,31 @@ router = APIRouter()
 
 PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "advice_prompt.txt"
 SYSTEM_PROMPT = PROMPT_PATH.read_text()
+
+FALLBACK_CONCLUSION = "Simulation complete. Follow the action plan above."
+
+ISPAD_NOTES = {
+    "safe": "Starting glucose is within ISPAD 2022 recommended pre-exercise range (5–10 mmol/L).",
+    "caution": "Consistent with ISPAD 2022: pre-exercise glucose warrants 10–15g fast carbs for mixed or aerobic activity.",
+    "danger": "ISPAD 2022: glucose below safe threshold — give fast carbs and recheck before starting activity.",
+}
+
+DISCLAIMER = (
+    "Steady is decision support, not medical advice. Always follow your diabetes team's specific guidance."
+)
+
+# Internal classifier → frontend traffic-light band (API always returns one of these)
+SEVERITY_MAP = {
+    "ok": "safe",
+    "mild": "caution",
+    "moderate": "caution",
+    "severe": "danger",
+    "critical": "danger",
+}
+
+
+def public_severity(internal: str) -> str:
+    return SEVERITY_MAP.get(internal, "safe")
 
 
 # ---------------------------------------------------------------------------
@@ -52,10 +77,15 @@ class TimelineEvent(BaseModel):
 
 
 class AdviseResponse(BaseModel):
-    severity: str
+    severity: str = Field(
+        ...,
+        description='Traffic-light band: one of "safe", "caution", "danger"',
+    )
     treatment_options: list[TreatmentOption]
     timeline: list[TimelineEvent]
     conclusion: str
+    ispad_note: str
+    disclaimer: str
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +137,6 @@ TREATMENT_TABLE = {
 def get_treatment_options(severity: str, req: AdviseRequest) -> list[TreatmentOption]:
     options = list(TREATMENT_TABLE.get(severity, TREATMENT_TABLE["ok"]))
 
-    # Add late-hypo warning if applicable
     if req.late_hypo_risk:
         options.append(TreatmentOption(
             action="Post-exercise snack",
@@ -115,7 +144,6 @@ def get_treatment_options(severity: str, req: AdviseRequest) -> list[TreatmentOp
             priority=2,
         ))
 
-    # Add IOB warning if significant
     if req.iob_units > 0.5:
         options.append(TreatmentOption(
             action="IOB awareness",
@@ -136,34 +164,27 @@ def build_timeline(req: AdviseRequest) -> list[TimelineEvent]:
     median = req.median
     times = req.times
 
-    # Start
     events.append(TimelineEvent(time_min=times[0], event="Current reading", glucose=median[0]))
 
-    # Peak glucose
     peak_idx = int(max(range(len(median)), key=lambda i: median[i]))
     if peak_idx > 0:
         events.append(TimelineEvent(time_min=times[peak_idx], event="Peak glucose", glucose=median[peak_idx]))
 
-    # First crossing below 5.0 (getting low)
     for i, g in enumerate(median):
         if g < 5.0 and i > 0 and median[i - 1] >= 5.0:
             events.append(TimelineEvent(time_min=times[i], event="Dropping below 5.0", glucose=round(g, 2)))
             break
 
-    # First crossing below 3.9 (hypo)
     for i, g in enumerate(median):
         if g < 3.9 and i > 0 and median[i - 1] >= 3.9:
             events.append(TimelineEvent(time_min=times[i], event="Hypo threshold crossed", glucose=round(g, 2)))
             break
 
-    # Lowest point
     min_idx = int(min(range(len(median)), key=lambda i: median[i]))
     events.append(TimelineEvent(time_min=times[min_idx], event="Lowest predicted", glucose=median[min_idx]))
 
-    # End
     events.append(TimelineEvent(time_min=times[-1], event="End of simulation", glucose=median[-1]))
 
-    # Deduplicate by time and sort
     seen = set()
     unique = []
     for e in events:
@@ -181,8 +202,9 @@ def build_timeline(req: AdviseRequest) -> list[TimelineEvent]:
 
 def stream_conclusion(severity: str, req: AdviseRequest, treatment_options, timeline):
     api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
+    if not api_key or not str(api_key).strip():
+        yield FALLBACK_CONCLUSION
+        return
 
     context = {
         "severity": severity,
@@ -197,24 +219,25 @@ def stream_conclusion(severity: str, req: AdviseRequest, treatment_options, time
         "timeline": [e.model_dump() for e in timeline],
     }
 
-    client = anthropic.Anthropic(api_key=api_key)
-
-    with client.messages.stream(
-        model="claude-sonnet-4-20250514",
-        max_tokens=256,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": json.dumps(context)}],
-    ) as stream:
-        for text in stream.text_stream:
-            yield text
+    try:
+        client = anthropic.Anthropic(api_key=api_key.strip(), timeout=30.0)
+        with client.messages.stream(
+            model="claude-sonnet-4-20250514",
+            max_tokens=256,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": json.dumps(context)}],
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+    except Exception:
+        yield FALLBACK_CONCLUSION
 
 
 def get_conclusion_sync(severity: str, req: AdviseRequest, treatment_options, timeline) -> str:
-    """Non-streaming version — collects the full conclusion."""
     parts = []
     for chunk in stream_conclusion(severity, req, treatment_options, timeline):
         parts.append(chunk)
-    return "".join(parts)
+    return "".join(parts) if parts else FALLBACK_CONCLUSION
 
 
 # ---------------------------------------------------------------------------
@@ -223,37 +246,46 @@ def get_conclusion_sync(severity: str, req: AdviseRequest, treatment_options, ti
 
 @router.post("/advise", response_model=AdviseResponse)
 def advise(req: AdviseRequest):
-    severity = classify_severity(req)
-    treatment_options = get_treatment_options(severity, req)
+    internal = classify_severity(req)
+    band = public_severity(internal)
+    treatment_options = get_treatment_options(internal, req)
     timeline = build_timeline(req)
-    conclusion = get_conclusion_sync(severity, req, treatment_options, timeline)
+    note = ISPAD_NOTES[band]
+    conclusion = get_conclusion_sync(internal, req, treatment_options, timeline)
 
     return AdviseResponse(
-        severity=severity,
+        severity=band,
         treatment_options=treatment_options,
         timeline=timeline,
-        conclusion=conclusion,
+        conclusion=conclusion or FALLBACK_CONCLUSION,
+        ispad_note=note,
+        disclaimer=DISCLAIMER,
     )
 
 
 @router.post("/advise/stream")
 def advise_stream(req: AdviseRequest):
-    severity = classify_severity(req)
-    treatment_options = get_treatment_options(severity, req)
+    internal = classify_severity(req)
+    band = public_severity(internal)
+    treatment_options = get_treatment_options(internal, req)
     timeline = build_timeline(req)
+    note = ISPAD_NOTES[band]
 
     def sse_generator():
-        # First send the structured data
         structured = {
-            "severity": severity,
+            "severity": band,
             "treatment_options": [t.model_dump() for t in treatment_options],
             "timeline": [e.model_dump() for e in timeline],
+            "ispad_note": note,
+            "disclaimer": DISCLAIMER,
         }
         yield f"data: {json.dumps({'type': 'metadata', 'data': structured})}\n\n"
 
-        # Then stream the conclusion
-        for chunk in stream_conclusion(severity, req, treatment_options, timeline):
-            yield f"data: {json.dumps({'type': 'conclusion', 'text': chunk})}\n\n"
+        try:
+            for chunk in stream_conclusion(internal, req, treatment_options, timeline):
+                yield f"data: {json.dumps({'type': 'conclusion', 'text': chunk})}\n\n"
+        except Exception:
+            yield f"data: {json.dumps({'type': 'conclusion', 'text': FALLBACK_CONCLUSION})}\n\n"
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
