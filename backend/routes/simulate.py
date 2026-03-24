@@ -3,7 +3,7 @@ POST /simulate — run glucose simulation with Monte Carlo uncertainty.
 """
 
 import numpy as np
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from model.iob import calculate_iob
@@ -33,6 +33,23 @@ class SimulateRequest(BaseModel):
     profile: Profile = Field(default_factory=Profile)
 
 
+class SimulateResponse(BaseModel):
+    times: list[int]
+    median: list[float]
+    p10: list[float]
+    p90: list[float]
+    iob_units: float
+    min_median: float
+    min_p10: float
+    danger_probability: float
+    danger_entry_minutes: int | None
+    late_hypo_risk: bool
+    activity_type: str
+    confidence_score: int
+    insulin_inferred: bool
+    insulin_inferred_units: float | None
+
+
 def compute_confidence_score(req: SimulateRequest) -> int:
     score = 1  # glucose is always provided
     if req.carbs_g > 0:
@@ -46,43 +63,59 @@ def compute_confidence_score(req: SimulateRequest) -> int:
     return score
 
 
-@router.post("/simulate")
+@router.post("/simulate", response_model=SimulateResponse)
 def simulate(req: SimulateRequest):
-    params = req.model_dump()
+    insulin_inferred = False
+    insulin_inferred_units = None
+    effective_req = req
+
+    if req.insulin_units == 0 and req.carbs_g > 0:
+        if req.profile.icr <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="profile.icr must be positive for carb-based insulin inference",
+            )
+        insulin_inferred_units = round(req.carbs_g / req.profile.icr, 1)
+        insulin_inferred = True
+        effective_req = req.model_copy(update={"insulin_units": insulin_inferred_units})
+    else:
+        insulin_inferred = False
+        insulin_inferred_units = None
+
+    params = effective_req.model_dump()
     profile = params.pop("profile")
 
-    # Run Monte Carlo
     mc_result = run_monte_carlo(params, profile, n_runs=200)
 
-    # Current IOB
     iob_units = 0.0
-    if req.insulin_units > 0:
+    if effective_req.insulin_units > 0:
         iob_units = calculate_iob(
-            req.insulin_units,
-            req.mins_since_insulin,
-            req.insulin_type,
-            req.profile.ait_hours,
+            effective_req.insulin_units,
+            effective_req.mins_since_insulin,
+            effective_req.insulin_type,
+            effective_req.profile.ait_hours,
         )
 
-    # Late hypo risk flag
     late_hypo_risk = (
-        req.activity_type in ("aerobic", "mixed")
-        and req.activity_duration_mins >= 45
+        effective_req.activity_type in ("aerobic", "mixed")
+        and effective_req.activity_duration_mins >= 45
     )
 
     times = np.linspace(0, 120, 25).astype(int).tolist()
 
-    return {
-        "times": times,
-        "median": [round(v, 2) for v in mc_result["median"]],
-        "p10": [round(v, 2) for v in mc_result["p10"]],
-        "p90": [round(v, 2) for v in mc_result["p90"]],
-        "iob_units": round(iob_units, 2),
-        "min_median": mc_result["min_median"],
-        "min_p10": mc_result["min_p10"],
-        "danger_probability": mc_result["danger_probability"],
-        "danger_entry_minutes": mc_result["danger_entry_minutes"],
-        "late_hypo_risk": late_hypo_risk,
-        "activity_type": req.activity_type,
-        "confidence_score": compute_confidence_score(req),
-    }
+    return SimulateResponse(
+        times=times,
+        median=[round(v, 2) for v in mc_result["median"]],
+        p10=[round(v, 2) for v in mc_result["p10"]],
+        p90=[round(v, 2) for v in mc_result["p90"]],
+        iob_units=round(iob_units, 2),
+        min_median=mc_result["min_median"],
+        min_p10=mc_result["min_p10"],
+        danger_probability=mc_result["danger_probability"],
+        danger_entry_minutes=mc_result["danger_entry_minutes"],
+        late_hypo_risk=late_hypo_risk,
+        activity_type=effective_req.activity_type,
+        confidence_score=compute_confidence_score(effective_req),
+        insulin_inferred=insulin_inferred,
+        insulin_inferred_units=insulin_inferred_units,
+    )
