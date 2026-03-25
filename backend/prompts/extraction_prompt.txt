@@ -35,3 +35,20 @@ CRITICAL TIMING RULES:
 - "had [food] X minutes/hours ago" → mins_since_meal = X (converted to minutes)
 - If the text says "2 units NovoRapid 90 minutes ago" and separately mentions food with no timing: mins_since_meal = 0, mins_since_insulin = 90
 - These two fields are completely independent. Never assign the same time value to both unless the text explicitly states both happened at the same time.
+
+CARB ESTIMATION FOR VAGUE FOOD DESCRIPTIONS:
+When a specific gram amount is not stated, use these defaults:
+- "dinner" or "meal" (unspecified) → carbs_g: 50
+- "lunch" (unspecified) → carbs_g: 40
+- "breakfast" (unspecified) → carbs_g: 35
+- "snack" → carbs_g: 20
+- "pork and rice" → carbs_g: 50
+- "pasta" → carbs_g: 60
+- "sandwich" → carbs_g: 35
+- "pizza" → carbs_g: 30
+- "banana" → carbs_g: 25
+- "apple" → carbs_g: 20
+- "oats" or "porridge" → carbs_g: 35
+- "cake" or "birthday cake" → carbs_g: 45
+- Any unrecognized food → carbs_g: 40
+Never return carbs_g: 0 if food is mentioned.

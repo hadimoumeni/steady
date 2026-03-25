@@ -17,12 +17,24 @@ SYSTEM_PROMPT = PROMPT_PATH.read_text()
 
 EXTRACT_MODEL = "claude-opus-4-5"
 
+PROFILE_DEFAULTS = {"isf": 2.8, "icr": 15.0, "ait_hours": 3.5, "weight_kg": 28.0}
+PROFILE_RANGES = {
+    "isf": (0.5, 8.0),
+    "icr": (3.0, 40.0),
+    "ait_hours": (2.0, 6.0),
+    "weight_kg": (10.0, 150.0),
+}
+
 
 class Profile(BaseModel):
     isf: float = 2.8
     icr: float = 15.0
     ait_hours: float = 3.5
     weight_kg: float = 28.0
+
+
+class Assumptions(BaseModel):
+    notes: str | None = None
 
 
 class ExtractRequest(BaseModel):
@@ -47,6 +59,7 @@ class ExtractResponse(BaseModel):
     profile: Profile = Field(default_factory=Profile)
     insulin_inferred: bool = False
     insulin_inferred_units: float | None = None
+    assumptions: Assumptions = Field(default_factory=Assumptions)
 
 
 @router.post("/extract", response_model=ExtractResponse)
@@ -117,20 +130,36 @@ def extract(req: ExtractRequest):
 
     data = ExtractResponse.model_validate(parsed)
 
-    if data.insulin_units == 0 and data.carbs_g > 0:
+    notes: list[str] = []
+
+    # Profile plausibility range checks (replace out-of-range values with defaults)
+    replaced_fields: list[str] = []
+    for field, (low, high) in PROFILE_RANGES.items():
+        val = getattr(data.profile, field, None)
+        if val is None or not (low <= val <= high):
+            setattr(data.profile, field, PROFILE_DEFAULTS[field])
+            replaced_fields.append(
+                f"{field} replaced with default {PROFILE_DEFAULTS[field]}"
+            )
+
+    if replaced_fields:
+        notes.append(
+            "Profile fields out of range or missing: " + ", ".join(replaced_fields)
+        )
+
+    # ICR insulin inference only when the meal is not "very recent"
+    if data.insulin_units == 0 and data.carbs_g > 0 and data.mins_since_meal > 30:
         if data.profile.icr <= 0:
             raise HTTPException(
                 status_code=422,
                 detail="profile.icr must be positive for carb-based insulin inference",
             )
         insulin_units = round(data.carbs_g / data.profile.icr, 1)
-        insulin_inferred = True
-        insulin_inferred_units = insulin_units
         data = data.model_copy(
             update={
                 "insulin_units": insulin_units,
-                "insulin_inferred": insulin_inferred,
-                "insulin_inferred_units": insulin_inferred_units,
+                "insulin_inferred": True,
+                "insulin_inferred_units": insulin_units,
             }
         )
     else:
@@ -138,6 +167,17 @@ def extract(req: ExtractRequest):
             update={
                 "insulin_inferred": False,
                 "insulin_inferred_units": None,
+            }
+        )
+        if data.insulin_units == 0 and data.carbs_g > 0 and data.mins_since_meal <= 30:
+            notes.append(
+                "No insulin mentioned and meal is recent — assuming none taken"
+            )
+
+    if notes:
+        data = data.model_copy(
+            update={
+                "assumptions": {"notes": "; ".join(notes)},
             }
         )
 
