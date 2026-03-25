@@ -61,7 +61,11 @@ export function ScenarioForm({
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
           rows={5}
-          placeholder="Example: Lena is 6.2 mmol/L, she had lunch an hour ago with her usual bolus. She wants to play football for an hour. She had Novorapid with lunch."
+          placeholder={`It's 2am. Lena's CGM alarm just went off —
+she's at 4.1 and dropping. She had a big dinner
+about 3 hours ago, maybe 60g of carbs, and took
+4 units of NovoRapid with it. She's groggy but
+awake. What do I do?`}
           className="w-full resize-y rounded-xl border border-border bg-background px-4 py-3 pr-24 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
           disabled={busy}
         />
@@ -146,7 +150,11 @@ export function ScenarioForm({
           disabled={busy}
           onClick={() =>
             void onRunText(
-              "Lena just checked her glucose — she's at 6.8. She had lunch about 90 minutes ago, around 30g of carbs. She took 2 units of NovoRapid about 3 hours ago. She wants to play football for an hour after school at an easy/light pace. Is it safe?"
+              `It's after school. Lena wants to play football
+with her friends for an hour. She's at 6.8, had
+lunch 90 minutes ago — about 30g of carbs — and
+took 2 units of NovoRapid with it. Is it safe
+for her to play?`
             )
           }
           className="rounded-xl border border-border bg-surface-muted px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-muted/80 disabled:opacity-50"

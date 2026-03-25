@@ -65,7 +65,13 @@ async function streamAdviceIntoState(
 
 export function SteadyApp() {
   const [inputMode, setInputMode] = useState<"natural" | "manual">("natural");
-  const [text, setText] = useState("");
+  const [text, setText] = useState(
+    `It's 2am. Lena's CGM alarm just went off —
+she's at 4.1 and dropping. She had a big dinner
+about 3 hours ago, maybe 60g of carbs, and took
+4 units of NovoRapid with it. She's groggy but
+awake. What do I do?`
+  );
   const [profile, setProfile] = useState<Profile>(defaultProfile);
   const [manual, setManual] = useState(() => defaultManualScenario(defaultProfile()));
   const [showProfile, setShowProfile] = useState(false);
