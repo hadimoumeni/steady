@@ -2,7 +2,6 @@ import type {
   AdviseResponse,
   DemoPayload,
   ExtractResponse,
-  NightscoutCurrent,
   Profile,
   SimulateResponse,
 } from "./types";
@@ -108,11 +107,6 @@ export async function fetchAdvise(body: Record<string, unknown>): Promise<Advise
 export async function fetchDemo(): Promise<DemoPayload> {
   const res = await fetch(`${baseUrl()}/demo`);
   return parseJson<DemoPayload>(res);
-}
-
-export async function fetchNightscoutCurrent(): Promise<NightscoutCurrent> {
-  const res = await fetch(`${baseUrl()}/nightscout/current`);
-  return parseJson<NightscoutCurrent>(res);
 }
 
 export async function fetchHealth(): Promise<{ status: string }> {

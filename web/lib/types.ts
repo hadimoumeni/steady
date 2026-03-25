@@ -67,12 +67,6 @@ export type AdviseResponse = {
   disclaimer: string;
 };
 
-export type NightscoutCurrent = {
-  glucose_mmol: number;
-  trend: string;
-  live: boolean;
-};
-
 export type DemoPayload = {
   simulate: SimulateResponse;
   advise: Record<string, unknown>;
