@@ -6,7 +6,6 @@ import {
   extractToSimulateBody,
   fetchDemo,
   fetchExtract,
-  fetchNightscoutCurrent,
   fetchSimulate,
   simulateToAdviseBody,
 } from "@/lib/api";
@@ -79,14 +78,10 @@ awake. What do I do?`
   const [error, setError] = useState<string | null>(null);
 
   const [extracted, setExtracted] = useState<ExtractResponse | null>(null);
-  const [extractedGlucose, setExtractedGlucose] = useState<number | null>(null);
   const [sim, setSim] = useState<SimulateResponse | null>(null);
   const [advise, setAdvise] = useState<AdviseResponse | null>(null);
   const [conclusionStream, setConclusionStream] = useState("");
   const [loadingConclusion, setLoadingConclusion] = useState(false);
-
-  const [liveGlucose, setLiveGlucose] = useState<number | null>(null);
-  const [cgmLive, setCgmLive] = useState(false);
 
   const { supported: voiceSupported, listening: voiceListening, error: voiceError, listen } =
     useSpeechRecognition();
@@ -95,33 +90,11 @@ awake. What do I do?`
     setManual((m) => ({ ...m, profile: { ...profile } }));
   }, [profile]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const ns = await fetchNightscoutCurrent();
-        if (!cancelled) {
-          setLiveGlucose(ns.glucose_mmol);
-          setCgmLive(ns.live);
-        }
-      } catch {
-        if (!cancelled) {
-          setLiveGlucose(null);
-          setCgmLive(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const resetResults = useCallback(() => {
     setError(null);
     setSim(null);
     setAdvise(null);
     setConclusionStream("");
-    setExtractedGlucose(null);
   }, []);
 
   const runScenarioText = useCallback(
@@ -137,14 +110,12 @@ awake. What do I do?`
       try {
         const ex = await fetchExtract(scenarioText.trim(), showProfile ? profile : undefined);
         setExtracted(ex);
-        setExtractedGlucose(ex.glucose);
         const s = await fetchSimulate(extractToSimulateBody(ex));
         setSim(s);
         await streamAdviceIntoState(simulateToAdviseBody(s), setAdvise, setConclusionStream);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Request failed.");
         setExtracted(null);
-        setExtractedGlucose(null);
       } finally {
         setBusy(false);
         setLoadingConclusion(false);
@@ -161,7 +132,6 @@ awake. What do I do?`
   const onDemo = useCallback(async () => {
     resetResults();
     setExtracted(null);
-    setExtractedGlucose(null);
     setBusy(true);
     setLoadingConclusion(true);
     try {
@@ -179,7 +149,6 @@ awake. What do I do?`
   const onManualRun = useCallback(async () => {
     resetResults();
     setExtracted(null);
-    setExtractedGlucose(manual.glucose);
     setBusy(true);
     setLoadingConclusion(true);
     try {
@@ -216,17 +185,6 @@ awake. What do I do?`
           Describe your child&apos;s glucose, food, insulin, and plans — or enter numbers manually. Steady simulates
           the next two hours and suggests practical steps with uncertainty bands.
         </p>
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-muted">
-          {liveGlucose != null && (
-            <span
-              className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-muted px-3 py-1 font-mono text-foreground"
-              title={cgmLive ? "Live Nightscout feed" : "Demo CGM feed"}
-            >
-              <span className={cgmLive ? "h-2 w-2 rounded-full bg-emerald-500" : "h-2 w-2 rounded-full bg-zinc-400"} />
-              {cgmLive ? "Live CGM" : "Demo CGM"} {liveGlucose.toFixed(1)} mmol/L
-            </span>
-          )}
-        </div>
       </header>
 
       <div
@@ -297,7 +255,7 @@ awake. What do I do?`
               {error}
             </p>
           )}
-          <GlucoseChart sim={sim} cgmValue={extractedGlucose ?? liveGlucose} cgmLive={cgmLive} />
+          <GlucoseChart sim={sim} />
         </div>
 
         <AdviceColumn
