@@ -59,7 +59,11 @@ export function ScenarioForm({
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
           rows={5}
-          placeholder="Example: Lena is 6.2 mmol/L, she had lunch an hour ago with her usual bolus. She wants to play football for an hour. She had Novorapid with lunch."
+          placeholder={`It's after school. Lena wants to play football 
+with her friends for an hour. She's at 6.8, had 
+lunch 90 minutes ago — about 30g of carbs — and 
+took 2 units of NovoRapid with it. Is it safe 
+for her to play?`}
           className="w-full resize-y rounded-xl border border-border bg-background px-4 py-3 pr-24 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
           disabled={busy}
         />
