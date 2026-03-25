@@ -66,7 +66,11 @@ export function GlucoseChart({
 
   const data = buildRows(sim);
   const yMin = 2.0;
-  const yMax = Math.min(30, Math.max(...sim.p90) + 1.5);
+  const p90Vals = sim.p90?.length ? sim.p90 : [yMin];
+  const yMaxCandidate = Math.min(30, Math.max(...p90Vals) + 1.5);
+  // Ensure a sane domain; if yMaxCandidate ends up below yMin, Recharts can
+  // auto-expand to include 0, which breaks the desired starting point.
+  const yMax = Math.max(yMin + 0.5, yMaxCandidate);
   const dangerAt = sim.danger_entry_minutes;
 
   return (
