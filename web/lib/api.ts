@@ -10,7 +10,7 @@ import { offlineExtract } from "./offlineExtract";
 
 function baseUrl(): string {
   const u = process.env.NEXT_PUBLIC_STEADY_API_URL;
-  if (!u || !u.trim()) return "http://localhost:8000";
+  if (!u || !u.trim()) return "https://steady-production-e22c.up.railway.app";
   return u.replace(/\/$/, "");
 }
 
