@@ -78,8 +78,11 @@ export function GlucoseChart({
           Next 2 hours (mmol/L)
         </h2>
         {cgmValue != null && (
-          <span className="text-sm text-muted">
-            {cgmLive ? "Live CGM" : "Demo CGM"}:{" "}
+          <span
+            className="text-sm text-muted"
+            title={cgmLive ? "Live Nightscout feed" : "Demo CGM feed"}
+          >
+            Demo CGM:{" "}
             <span className="font-mono font-medium text-foreground">{cgmValue.toFixed(1)}</span> mmol/L
           </span>
         )}
