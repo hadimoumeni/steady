@@ -8,6 +8,7 @@ Claude is called only for a 2-3 sentence plain-English conclusion, streamed via 
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import anthropic
 from fastapi import APIRouter
@@ -339,6 +340,9 @@ def build_timeline(req: AdviseRequest) -> list[TimelineEvent]:
 # ---------------------------------------------------------------------------
 
 def stream_conclusion(severity: str, req: AdviseRequest, treatment_options, timeline):
+    print(
+        f"Calling Claude for conclusion, key present: {bool(os.environ.get('ANTHROPIC_API_KEY'))}"
+    )
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key or not str(api_key).strip():
         yield FALLBACK_CONCLUSION
@@ -378,12 +382,125 @@ def get_conclusion_sync(severity: str, req: AdviseRequest, treatment_options, ti
     return "".join(parts) if parts else FALLBACK_CONCLUSION
 
 
+def _normalize_advise_input(body: dict[str, Any]) -> tuple[AdviseRequest, float | None]:
+    """
+    Support both:
+    - Current UI contract: flat AdviseRequest fields
+    - Compatibility envelope used by the provided curl command: {simulation, params, child_name}
+    """
+    if isinstance(body, dict) and body.get("simulation") is not None and body.get("params") is not None:
+        sim = body["simulation"] or {}
+        params = body["params"] or {}
+        median = sim.get("median") or []
+        n = len(median)
+        if n >= 2:
+            times = [int(i * (120 / (n - 1))) for i in range(n)]
+        else:
+            times = [0]
+
+        glucose_override = params.get("glucose")
+
+        normalized: dict[str, Any] = {
+            "times": times,
+            "median": median,
+            "p10": sim.get("p10") or [],
+            "p90": sim.get("p90") or [],
+            "iob_units": sim.get("iob_units", 0.0),
+            "min_median": sim.get("min_median"),
+            "min_p10": sim.get("min_p10"),
+            "danger_probability": sim.get("danger_probability", 0.0),
+            "danger_entry_minutes": sim.get("danger_entry_minutes"),
+            "late_hypo_risk": sim.get("late_hypo_risk", False),
+            "activity_type": params.get("activity_type") or sim.get("activity_type") or "rest",
+            "confidence_score": sim.get("confidence_score", 1),
+            "insulin_inferred": False,
+            "insulin_inferred_units": None,
+        }
+        return AdviseRequest.model_validate(normalized), glucose_override
+
+    glucose_override = body.get("glucose")
+    return AdviseRequest.model_validate(body), glucose_override
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 @router.post("/advise", response_model=AdviseResponse)
-def advise(req: AdviseRequest):
+def advise(body: dict[str, Any]):
+    # Normalize request (supports both current UI contract and the provided curl envelope).
+    req, glucose_override = _normalize_advise_input(body)
+
+    median0 = req.median[0] if req.median else None
+
+    # Safety override — handle extreme hypo/hyper directly (before any other logic / Claude).
+    if (median0 is not None and median0 < 4.0) or (glucose_override is not None and glucose_override < 4.0):
+        now_glucose = float(median0) if median0 is not None else float(glucose_override)
+        return AdviseResponse(
+            severity="danger",
+            severity_label="Already hypoglycemic — act now",
+            immediate_step="Give 15g fast carbs immediately. Glucose is already below safe threshold.",
+            treatment_options=[
+                TreatmentOption(action="Glucose tablets", detail="3 tablets (fast)", priority=1),
+                TreatmentOption(action="Orange juice", detail="150ml (fast)", priority=1),
+                TreatmentOption(action="Small banana", detail="half (medium)", priority=2),
+            ],
+            timeline=[
+                TimelineEvent(time_min=0, event="Give 15g fast carbs immediately", glucose=now_glucose),
+                TimelineEvent(time_min=15, event="Recheck glucose", glucose=now_glucose),
+            ],
+            recheck_minutes=15,
+            backup_step="If glucose has not risen after 15 minutes give another 15g and call your diabetes team",
+            escalation="If child is unconscious or cannot swallow do not give food. Call 112 immediately.",
+            ispad_note="ISPAD 2022: glucose below 4.0 mmol/L requires immediate fast-acting carbohydrate treatment before any activity.",
+            disclaimer="Steady is decision support, not medical advice.",
+            conclusion="Glucose is already in the hypoglycemic range. Do not start activity. Give fast carbs now and recheck in 15 minutes.",
+            late_hypo_warning=None,
+            ispad_reference=IspadReference(**ISPAD_REFERENCE),
+            assumptions=Assumptions(
+                insulin_inferred=False,
+                insulin_inferred_units=None,
+                meal_timing_assumed=False,
+                notes="Glucose below 4.0 mmol/L — simulation bypassed, immediate treatment required",
+            ),
+        )
+
+    if (median0 is not None and median0 > 14.0) or (glucose_override is not None and glucose_override > 14.0):
+        now_glucose = float(median0) if median0 is not None else float(glucose_override)
+        return AdviseResponse(
+            severity="caution",
+            severity_label="Check for ketones first",
+            immediate_step="Check ketone levels before any activity. Glucose is above safe exercise threshold.",
+            treatment_options=[],
+            timeline=[
+                TimelineEvent(time_min=0, event="Check ketone levels", glucose=now_glucose),
+                TimelineEvent(
+                    time_min=15,
+                    event="If ketones clear, light activity only — monitor every 15 min",
+                    glucose=now_glucose,
+                ),
+                TimelineEvent(
+                    time_min=15,
+                    event="If ketones present, no exercise — contact diabetes team",
+                    glucose=now_glucose,
+                ),
+            ],
+            recheck_minutes=15,
+            backup_step="If ketones are present do not allow exercise and contact your diabetes team immediately",
+            escalation="If child feels unwell, is vomiting, or breathing rapidly call 112 immediately.",
+            ispad_note="ISPAD 2022: glucose above 14 mmol/L — check ketones before exercise.",
+            disclaimer="Steady is decision support, not medical advice.",
+            conclusion="Glucose is above the safe exercise threshold. Check for ketones before any activity. If ketones are clear, light activity is acceptable with close monitoring.",
+            late_hypo_warning=None,
+            ispad_reference=IspadReference(**ISPAD_REFERENCE),
+            assumptions=Assumptions(
+                insulin_inferred=False,
+                insulin_inferred_units=None,
+                meal_timing_assumed=False,
+                notes="Glucose above 14.0 mmol/L — ketone check required before simulation",
+            ),
+        )
+
     internal = classify_severity(req)
     band = public_severity(internal)
     treatment_options = get_treatment_options(internal, req)
