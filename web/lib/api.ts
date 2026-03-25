@@ -75,6 +75,8 @@ export function simulateToAdviseBody(sim: SimulateResponse): Record<string, unkn
     p10: sim.p10,
     p90: sim.p90,
     iob_units: sim.iob_units,
+    insulin_inferred: sim.insulin_inferred,
+    insulin_inferred_units: sim.insulin_inferred_units,
     min_median: sim.min_median,
     min_p10: sim.min_p10,
     danger_probability: sim.danger_probability,

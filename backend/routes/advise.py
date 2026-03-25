@@ -31,6 +31,13 @@ DISCLAIMER = (
     "Steady is decision support, not medical advice. Always follow your diabetes team's specific guidance."
 )
 
+# Public ISPAD reference shown in UI/metadata
+ISPAD_REFERENCE = {
+    "title": "ISPAD Clinical Practice Consensus Guidelines",
+    "year": 2022,
+    "url": "https://www.ispad.org",
+}
+
 # Internal classifier → frontend traffic-light band (API always returns one of these)
 SEVERITY_MAP = {
     "ok": "safe",
@@ -62,6 +69,9 @@ class AdviseRequest(BaseModel):
     late_hypo_risk: bool = False
     activity_type: str = "rest"
     confidence_score: int = 1
+    # Optional fields (propagated from /simulate when the frontend includes them)
+    insulin_inferred: bool = False
+    insulin_inferred_units: float | None = None
 
 
 class TreatmentOption(BaseModel):
@@ -74,6 +84,19 @@ class TimelineEvent(BaseModel):
     time_min: int
     event: str
     glucose: float
+
+
+class IspadReference(BaseModel):
+    title: str
+    year: int
+    url: str
+
+
+class Assumptions(BaseModel):
+    insulin_inferred: bool
+    insulin_inferred_units: float | None
+    meal_timing_assumed: bool
+    notes: str | None = None
 
 
 class AdviseResponse(BaseModel):
@@ -107,6 +130,8 @@ class AdviseResponse(BaseModel):
     conclusion: str
     ispad_note: str
     disclaimer: str
+    ispad_reference: IspadReference
+    assumptions: Assumptions
 
 
 # ---------------------------------------------------------------------------
@@ -181,9 +206,9 @@ def get_treatment_options(severity: str, req: AdviseRequest) -> list[TreatmentOp
 # ---------------------------------------------------------------------------
 
 BAND_HEADLINE = {
-    "safe": "On track for activity",
-    "caution": "Plan carbs or extra checks",
-    "danger": "Treat glucose before activity",
+    "safe": "Safe to go",
+    "caution": "Give carbs before she goes",
+    "danger": "Stop — act before she plays",
 }
 
 BACKUP_STEP = (
@@ -197,38 +222,76 @@ ESCALATION_STEP = (
 )
 
 
-def build_action_plan(internal: str, band: str, req: AdviseRequest) -> dict:
+def immediate_step_from_first_option(options: list[TreatmentOption]) -> str:
+    """
+    Immediate step must be derived from the first treatment option (priority-sorted).
+    """
+    if not options:
+        return "Follow your diabetes team's guidance and recheck glucose."
+
+    opt = options[0]
+    action = opt.action.lower()
+    detail = opt.detail.strip()
+
+    if action in ("immediate fast carbs", "fast carbs"):
+        # Detail includes grams and often ends with "now" already.
+        detail_no_now = detail
+        if detail_no_now.lower().endswith(" now"):
+            detail_no_now = detail_no_now[: -len(" now")]
+        return f"Give {detail_no_now} now."
+    if action == "snack":
+        # Detail does not include "now"; add it explicitly.
+        return f"Give {detail} now."
+    if action == "small snack":
+        return f"Give {detail} now."
+    if action == "stop activity":
+        return "Stop strenuous activity immediately."
+    if action == "reduce activity":
+        return "Reduce activity intensity immediately."
+    if action == "continue as planned":
+        return "Safe to go — keep usual monitoring and follow your care plan."
+
+    # Fallback: derive from the selected option.
+    return f"{opt.action}: {detail}"
+
+
+def backup_step_for_band(band: str) -> str:
+    # Always reference the frontend's 15-minute recheck window.
+    if band == "safe":
+        return "If glucose starts trending down unexpectedly, follow your diabetes team's plan and consider checking sooner."
+    if band == "caution":
+        return (
+            "If glucose hasn't improved after 15 minutes, give another 10-15g fast carbs "
+            "and contact your diabetes team for next steps."
+        )
+    return (
+        "Stop activity. If glucose hasn't improved after 15 minutes, give another 15-20g fast carbs "
+        "and contact your diabetes team for next steps."
+    )
+
+
+def build_action_plan(
+    band: str,
+    req: AdviseRequest,
+    treatment_options: list[TreatmentOption],
+) -> dict:
     """Deterministic headlines + timing — no LLM."""
     severity_label = BAND_HEADLINE.get(band, BAND_HEADLINE["safe"])
-
-    if internal == "critical":
-        immediate = "Give 15–20g fast-acting carbs now and stop strenuous activity."
-        recheck = 10
-    elif internal == "severe":
-        immediate = "Give about 15g fast carbs; delay vigorous activity until glucose is safer."
-        recheck = 10
-    elif internal == "moderate":
-        immediate = "Consider 10–15g carbs before starting; reduce intensity if glucose keeps falling."
-        recheck = 20
-    elif internal == "mild":
-        immediate = "A small snack (about 5–10g carbs) may help if exercise is starting soon."
-        recheck = 15
-    else:
-        immediate = "Trajectory looks acceptable; keep usual monitoring and follow your care plan."
-        recheck = 30
+    immediate = immediate_step_from_first_option(treatment_options)
+    recheck = 15
 
     late = None
     if req.late_hypo_risk:
         late = (
             "After longer aerobic or mixed activity, glucose can fall hours later. "
-            "Consider a bedtime check or slow snack if your team agrees."
+            "Check before bed and consider a slow-release snack if your team agrees."
         )
 
     return {
         "severity_label": severity_label,
         "immediate_step": immediate,
         "recheck_minutes": recheck,
-        "backup_step": BACKUP_STEP,
+        "backup_step": backup_step_for_band(band),
         "escalation": ESCALATION_STEP,
         "late_hypo_warning": late,
     }
@@ -327,7 +390,14 @@ def advise(req: AdviseRequest):
     timeline = build_timeline(req)
     note = ISPAD_NOTES[band]
     conclusion = get_conclusion_sync(internal, req, treatment_options, timeline)
-    plan = build_action_plan(internal, band, req)
+    plan = build_action_plan(band, req, treatment_options)
+
+    assumptions = Assumptions(
+        insulin_inferred=req.insulin_inferred,
+        insulin_inferred_units=req.insulin_inferred_units,
+        meal_timing_assumed=False,
+        notes=None,
+    )
 
     return AdviseResponse(
         severity=band,
@@ -342,6 +412,8 @@ def advise(req: AdviseRequest):
         conclusion=conclusion or FALLBACK_CONCLUSION,
         ispad_note=note,
         disclaimer=DISCLAIMER,
+        ispad_reference=IspadReference(**ISPAD_REFERENCE),
+        assumptions=assumptions,
     )
 
 
@@ -352,7 +424,14 @@ def advise_stream(req: AdviseRequest):
     treatment_options = get_treatment_options(internal, req)
     timeline = build_timeline(req)
     note = ISPAD_NOTES[band]
-    plan = build_action_plan(internal, band, req)
+    plan = build_action_plan(band, req, treatment_options)
+
+    assumptions = Assumptions(
+        insulin_inferred=req.insulin_inferred,
+        insulin_inferred_units=req.insulin_inferred_units,
+        meal_timing_assumed=False,
+        notes=None,
+    )
 
     def sse_generator():
         structured = {
@@ -367,6 +446,8 @@ def advise_stream(req: AdviseRequest):
             "timeline": [e.model_dump() for e in timeline],
             "ispad_note": note,
             "disclaimer": DISCLAIMER,
+            "ispad_reference": IspadReference(**ISPAD_REFERENCE).model_dump(),
+            "assumptions": assumptions.model_dump(),
         }
         yield f"data: {json.dumps({'type': 'metadata', 'data': structured})}\n\n"
 
