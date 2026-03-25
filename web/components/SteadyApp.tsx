@@ -79,6 +79,7 @@ awake. What do I do?`
   const [error, setError] = useState<string | null>(null);
 
   const [extracted, setExtracted] = useState<ExtractResponse | null>(null);
+  const [extractedGlucose, setExtractedGlucose] = useState<number | null>(null);
   const [sim, setSim] = useState<SimulateResponse | null>(null);
   const [advise, setAdvise] = useState<AdviseResponse | null>(null);
   const [conclusionStream, setConclusionStream] = useState("");
@@ -120,6 +121,7 @@ awake. What do I do?`
     setSim(null);
     setAdvise(null);
     setConclusionStream("");
+    setExtractedGlucose(null);
   }, []);
 
   const runScenarioText = useCallback(
@@ -129,22 +131,24 @@ awake. What do I do?`
       // Keep the input field in sync with what we run.
       setText(scenarioText);
 
-    resetResults();
-    setBusy(true);
-    setLoadingConclusion(true);
-    try {
-      const ex = await fetchExtract(scenarioText.trim(), showProfile ? profile : undefined);
-      setExtracted(ex);
-      const s = await fetchSimulate(extractToSimulateBody(ex));
-      setSim(s);
-      await streamAdviceIntoState(simulateToAdviseBody(s), setAdvise, setConclusionStream);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Request failed.");
-      setExtracted(null);
-    } finally {
-      setBusy(false);
-      setLoadingConclusion(false);
-    }
+      resetResults();
+      setBusy(true);
+      setLoadingConclusion(true);
+      try {
+        const ex = await fetchExtract(scenarioText.trim(), showProfile ? profile : undefined);
+        setExtracted(ex);
+        setExtractedGlucose(ex.glucose);
+        const s = await fetchSimulate(extractToSimulateBody(ex));
+        setSim(s);
+        await streamAdviceIntoState(simulateToAdviseBody(s), setAdvise, setConclusionStream);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Request failed.");
+        setExtracted(null);
+        setExtractedGlucose(null);
+      } finally {
+        setBusy(false);
+        setLoadingConclusion(false);
+      }
     },
     [showProfile, profile, resetResults]
   );
@@ -157,6 +161,7 @@ awake. What do I do?`
   const onDemo = useCallback(async () => {
     resetResults();
     setExtracted(null);
+    setExtractedGlucose(null);
     setBusy(true);
     setLoadingConclusion(true);
     try {
@@ -174,6 +179,7 @@ awake. What do I do?`
   const onManualRun = useCallback(async () => {
     resetResults();
     setExtracted(null);
+    setExtractedGlucose(manual.glucose);
     setBusy(true);
     setLoadingConclusion(true);
     try {
@@ -291,7 +297,7 @@ awake. What do I do?`
               {error}
             </p>
           )}
-          <GlucoseChart sim={sim} liveReading={liveGlucose} cgmLive={cgmLive} />
+          <GlucoseChart sim={sim} cgmValue={extractedGlucose ?? liveGlucose} cgmLive={cgmLive} />
         </div>
 
         <AdviceColumn

@@ -51,12 +51,12 @@ function buildRows(sim: SimulateResponse): Row[] {
 
 export function GlucoseChart({
   sim,
-  liveReading,
   cgmLive,
+  cgmValue,
 }: {
   sim: SimulateResponse | null;
-  liveReading?: number | null;
   cgmLive?: boolean;
+  cgmValue?: number | null;
 }) {
   if (!sim) {
     return (
@@ -67,21 +67,8 @@ export function GlucoseChart({
   }
 
   const data = buildRows(sim);
-  const p10All = sim.p10 ?? [];
-  const p90All = sim.p90 ?? [];
-  const median0 = sim.median?.[0] ?? 0;
-  const inputGlucose = liveReading ?? median0;
-
-  // If median[0] doesn't align with the patient starting glucose (e.g. live CGM differs),
-  // expand the domain based on p10/p90 to keep the chart readable.
-  const medianAligned =
-    liveReading == null ? true : Math.abs(median0 - inputGlucose) < 1e-6;
-
-  const p10Min = p10All.length ? Math.min(...p10All) : median0;
-  const p90Max = p90All.length ? Math.max(...p90All) : median0;
-
-  const yMin = medianAligned ? inputGlucose : Math.min(0, p10Min) - 0.5;
-  const yMax = Math.max(p90Max + 0.5, yMin + 0.1);
+  const yMin = 2;
+  const yMax = 12;
   const dangerAt = sim.danger_entry_minutes;
 
   return (
@@ -90,10 +77,10 @@ export function GlucoseChart({
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
           Next 2 hours (mmol/L)
         </h2>
-        {liveReading != null && (
+        {cgmValue != null && (
           <span className="text-sm text-muted">
             {cgmLive ? "Live CGM" : "Demo CGM"}:{" "}
-            <span className="font-mono font-medium text-foreground">{liveReading.toFixed(1)}</span>
+            <span className="font-mono font-medium text-foreground">{cgmValue.toFixed(1)}</span> mmol/L
           </span>
         )}
       </div>
