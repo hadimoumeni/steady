@@ -6,6 +6,7 @@ import type {
   Profile,
   SimulateResponse,
 } from "./types";
+import { offlineExtract } from "./offlineExtract";
 
 function baseUrl(): string {
   const u = process.env.NEXT_PUBLIC_STEADY_API_URL;
@@ -40,6 +41,14 @@ export async function fetchExtract(
       profile: profile && Object.keys(profile).length ? profile : undefined,
     }),
   });
+
+  // If the backend can't call the LLM (missing ANTHROPIC_API_KEY), fall back
+  // to lightweight regex extraction so the prototype still works.
+  if (res.status === 503) {
+    console.warn("LLM extraction unavailable; using offline parsing fallback.");
+    return offlineExtract(text, profile);
+  }
+
   return parseJson<ExtractResponse>(res);
 }
 

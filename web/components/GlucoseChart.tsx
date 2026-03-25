@@ -31,14 +31,18 @@ type Row = {
 };
 
 function buildRows(sim: SimulateResponse): Row[] {
+  const median0 = sim.median[0] ?? 0;
+  const p10_0 = sim.p10[0] ?? median0;
+  const p90_0 = sim.p90[0] ?? median0;
+
   return sim.times.map((t, i) => {
-    const p10 = sim.p10[i] ?? 0;
-    const p90 = sim.p90[i] ?? 0;
+    const p10 = sim.p10[i] ?? p10_0;
+    const p90 = sim.p90[i] ?? p90_0;
     return {
       time: t,
       bandLow: p10,
       bandHeight: Math.max(0, p90 - p10),
-      median: sim.median[i] ?? 0,
+      median: sim.median[i] ?? median0,
       p10,
       p90,
     };
@@ -61,7 +65,7 @@ export function GlucoseChart({
   }
 
   const data = buildRows(sim);
-  const yMin = Math.max(1.5, Math.min(...sim.p10) - 0.5);
+  const yMin = 2.0;
   const yMax = Math.min(30, Math.max(...sim.p90) + 1.5);
   const dangerAt = sim.danger_entry_minutes;
 
@@ -190,7 +194,14 @@ export function GlucoseChart({
               isAnimationActive
               animationDuration={ANIM_MS}
             />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Legend
+              wrapperStyle={{ fontSize: 11 }}
+              formatter={(value: any, entry: any) => {
+                if (entry?.dataKey === "bandHeight") return "Confidence band";
+                if (entry?.dataKey === "bandLow") return null; // don't show internal stack segment
+                return value;
+              }}
+            />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

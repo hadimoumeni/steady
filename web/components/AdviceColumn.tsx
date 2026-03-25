@@ -16,12 +16,16 @@ function severityStyles(sev: AdviseResponse["severity"]) {
         ring: "bg-emerald-500",
         label: "text-emerald-800 dark:text-emerald-200",
         badge: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100",
+        topBg: "bg-emerald-900",
+        topText: "text-emerald-50",
       };
     case "caution":
       return {
         ring: "bg-amber-500",
         label: "text-amber-900 dark:text-amber-100",
         badge: "bg-amber-100 text-amber-950 dark:bg-amber-900/40 dark:text-amber-50",
+        topBg: "bg-amber-900",
+        topText: "text-amber-50",
       };
     case "danger":
     default:
@@ -29,6 +33,8 @@ function severityStyles(sev: AdviseResponse["severity"]) {
         ring: "bg-rose-600",
         label: "text-rose-900 dark:text-rose-100",
         badge: "bg-rose-100 text-rose-950 dark:bg-rose-900/40 dark:text-rose-50",
+        topBg: "bg-rose-900",
+        topText: "text-rose-50",
       };
   }
 }
@@ -55,25 +61,22 @@ export function AdviceColumn({
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-5 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex flex-col items-center gap-1 pt-0.5">
-          <span className={clsx("h-3 w-3 rounded-full shadow-sm", styles.ring)} title="Severity" />
-          <span className="h-8 w-px bg-border" />
+      <div className={clsx("rounded-xl p-5", styles.topBg)}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className="text-xs font-medium uppercase tracking-wide text-white/80">Traffic light</p>
+            <p className={clsx("mt-1 text-3xl font-semibold capitalize leading-tight", styles.topText)}>{s}</p>
+            {headline && <p className="mt-1 text-base font-medium text-white/90">{headline}</p>}
+          </div>
+          <span
+            className={clsx(
+              "shrink-0 rounded-full border border-white/15 px-3 py-1.5 text-xs font-medium",
+              "text-white/90 bg-white/10"
+            )}
+          >
+            ISPAD 2022 note
+          </span>
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Traffic light</p>
-          <p className={clsx("text-xl font-semibold capitalize", styles.label)}>{s}</p>
-          {headline && <p className="mt-1 text-base font-medium text-foreground">{headline}</p>}
-          {sim && (
-            <p className="mt-1 text-sm text-muted">
-              Danger in sim: {(sim.danger_probability * 100).toFixed(0)}% of runs · min p10{" "}
-              {sim.min_p10.toFixed(1)} mmol/L
-            </p>
-          )}
-        </div>
-        <span className={clsx("shrink-0 rounded-full px-3 py-1 text-xs font-medium", styles.badge)}>
-          ISPAD 2022 note
-        </span>
       </div>
 
       {immediate && (

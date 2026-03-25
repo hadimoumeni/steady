@@ -48,8 +48,7 @@ export function ScenarioForm({
         </button>
       </div>
       <p className="mb-3 text-sm text-muted">
-        One short paragraph: current glucose, food, insulin, and planned activity (e.g. football for 60 minutes).
-        Requires an API key on the server for extraction.
+        Describe the situation in plain English.
       </p>
       <div className="relative">
         <label htmlFor="steady-scenario" className="sr-only">

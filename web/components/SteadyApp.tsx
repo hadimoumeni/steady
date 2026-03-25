@@ -124,6 +124,12 @@ export function SteadyApp() {
     try {
       const ex = await fetchExtract(text.trim(), showProfile ? profile : undefined);
       setExtracted(ex);
+
+      // Keep CGM/live indicators in sync with the patient's "current situation"
+      // provided by the user (or extracted offline fallback when LLM is unavailable).
+      setLiveGlucose(ex.glucose);
+      setCgmLive(false);
+
       const s = await fetchSimulate(extractToSimulateBody(ex));
       setSim(s);
       await streamAdviceIntoState(simulateToAdviseBody(s), setAdvise, setConclusionStream);
@@ -144,6 +150,14 @@ export function SteadyApp() {
     try {
       const demo = await fetchDemo();
       setSim(demo.simulate);
+
+      // Demo uses simulated glucose; show it as the current situation.
+      const start = demo.simulate?.median?.[0];
+      if (typeof start === "number" && Number.isFinite(start)) {
+        setLiveGlucose(start);
+        setCgmLive(false);
+      }
+
       await streamAdviceIntoState(simulateToAdviseBody(demo.simulate), setAdvise, setConclusionStream);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Demo failed — is the API running?");
@@ -193,7 +207,7 @@ export function SteadyApp() {
           the next two hours and suggests practical steps with uncertainty bands.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-muted">
-          {liveGlucose != null && (
+          {inputMode === "natural" && liveGlucose != null && (
             <span
               className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-muted px-3 py-1 font-mono text-foreground"
               title={cgmLive ? "Demo Nightscout feed" : "Offline fallback"}
@@ -272,7 +286,7 @@ export function SteadyApp() {
               {error}
             </p>
           )}
-          <GlucoseChart sim={sim} liveReading={liveGlucose} />
+          <GlucoseChart sim={sim} liveReading={inputMode === "natural" ? liveGlucose : null} />
         </div>
 
         <AdviceColumn
