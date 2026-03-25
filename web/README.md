@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Steady web (Next.js)
 
-## Getting Started
+This is the UI for **Steady**. It talks to the FastAPI app in `../backend`.
 
-First, run the development server:
+## 1. Backend API + Anthropic key
+
+From the repo root:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd backend
+cp .env.example .env
+# Edit .env — set ANTHROPIC_API_KEY (required for Plain English extract + Claude summary stream)
+python3 -m pip install -r requirements.txt
+python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Check [http://localhost:8000/health](http://localhost:8000/health) → `{"status":"ok"}`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 2. This app
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cd web
+cp .env.example .env.local
+# Edit .env.local if the API is not at http://localhost:8000 (e.g. deployed URL)
+npm install
+npm run dev
+```
 
-## Learn More
+Open [http://localhost:3000](http://localhost:3000).
 
-To learn more about Next.js, take a look at the following resources:
+## How calls fit together
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Plain English**: `POST /extract` → `POST /simulate` → `POST /advise/stream` (SSE: metadata + streamed conclusion).
+- **Manual numbers**: `POST /simulate` → `POST /advise/stream`.
+- **Demo** button: loads `GET /demo` for the simulate payload, then runs `/advise/stream` on that curve.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+`NEXT_PUBLIC_STEADY_API_URL` must point at the same host the browser can reach (CORS is wide open on the API). The Anthropic key stays **only** on the server in `backend/.env`.
 
-## Deploy on Vercel
+## Legacy Vite folder
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+If you still have a `frontend/` directory from an older prototype, the supported UI is this **`web/`** Next app.
