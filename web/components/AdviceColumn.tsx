@@ -53,6 +53,12 @@ export function AdviceColumn({
   const escalation = advise?.escalation;
   const apiLate = advise?.late_hypo_warning;
 
+  const FALLBACK = "Simulation complete. Follow the action plan above.";
+  const streamingIsFallback =
+    conclusionStreaming && conclusionStreaming.startsWith("Simulation complete. Follow the action plan above");
+  const finalIsFallback = !conclusionStreaming && advise?.conclusion === FALLBACK;
+  const hideConclusion = streamingIsFallback || finalIsFallback;
+
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-5 shadow-sm">
       <div className="flex items-start gap-3">
@@ -64,12 +70,6 @@ export function AdviceColumn({
           <p className="text-xs font-medium uppercase tracking-wide text-muted">Traffic light</p>
           <p className={clsx("text-xl font-semibold capitalize", styles.label)}>{s}</p>
           {headline && <p className="mt-1 text-base font-medium text-foreground">{headline}</p>}
-          {sim && (
-            <p className="mt-1 text-sm text-muted">
-              Danger in sim: {(sim.danger_probability * 100).toFixed(0)}% of runs · min p10{" "}
-              {sim.min_p10.toFixed(1)} mmol/L
-            </p>
-          )}
         </div>
         <span className={clsx("shrink-0 rounded-full px-3 py-1 text-xs font-medium", styles.badge)}>
           ISPAD 2022 note
@@ -158,23 +158,25 @@ export function AdviceColumn({
         </div>
       )}
 
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-foreground">Summary</h3>
-        <div
-          className="min-h-[4rem] rounded-xl bg-surface-muted/50 px-4 py-3 text-sm leading-relaxed text-foreground"
-          aria-live="polite"
-        >
-          {loadingConclusion && !conclusionStreaming && (
-            <span className="animate-pulse text-muted">Generating summary…</span>
-          )}
-          {(conclusionStreaming || advise?.conclusion) && (
-            <p>{conclusionStreaming || advise?.conclusion}</p>
-          )}
-          {!loadingConclusion && !conclusionStreaming && !advise?.conclusion && (
-            <span className="text-muted">Summary appears after a run.</span>
-          )}
+      {!hideConclusion && (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-foreground">Summary</h3>
+          <div
+            className="min-h-[4rem] rounded-xl bg-surface-muted/50 px-4 py-3 text-sm leading-relaxed text-foreground"
+            aria-live="polite"
+          >
+            {loadingConclusion && !conclusionStreaming && (
+              <span className="animate-pulse text-muted">Generating summary…</span>
+            )}
+            {(conclusionStreaming || advise?.conclusion) && (
+              <p>{conclusionStreaming || advise?.conclusion}</p>
+            )}
+            {!loadingConclusion && !conclusionStreaming && !advise?.conclusion && (
+              <span className="text-muted">Summary appears after a run.</span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {advise?.disclaimer && (
         <p className="text-xs leading-relaxed text-muted">{advise.disclaimer}</p>

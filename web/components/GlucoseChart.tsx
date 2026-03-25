@@ -48,9 +48,11 @@ function buildRows(sim: SimulateResponse): Row[] {
 export function GlucoseChart({
   sim,
   liveReading,
+  cgmLive,
 }: {
   sim: SimulateResponse | null;
   liveReading?: number | null;
+  cgmLive?: boolean;
 }) {
   if (!sim) {
     return (
@@ -73,7 +75,7 @@ export function GlucoseChart({
         </h2>
         {liveReading != null && (
           <span className="text-sm text-muted">
-            Live CGM:{" "}
+            {cgmLive ? "Live CGM" : "Demo CGM"}:{" "}
             <span className="font-mono font-medium text-foreground">{liveReading.toFixed(1)}</span>
           </span>
         )}
@@ -152,6 +154,7 @@ export function GlucoseChart({
               dataKey="bandHeight"
               stackId="band"
               stroke="none"
+              name="Confidence band"
               fill="url(#bandFill)"
               isAnimationActive
               animationDuration={ANIM_MS}

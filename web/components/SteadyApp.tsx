@@ -116,13 +116,18 @@ export function SteadyApp() {
     setConclusionStream("");
   }, []);
 
-  const onSubmit = useCallback(async () => {
-    if (!text.trim()) return;
+  const runScenarioText = useCallback(
+    async (scenarioText: string) => {
+      if (!scenarioText.trim()) return;
+
+      // Keep the input field in sync with what we run.
+      setText(scenarioText);
+
     resetResults();
     setBusy(true);
     setLoadingConclusion(true);
     try {
-      const ex = await fetchExtract(text.trim(), showProfile ? profile : undefined);
+      const ex = await fetchExtract(scenarioText.trim(), showProfile ? profile : undefined);
       setExtracted(ex);
       const s = await fetchSimulate(extractToSimulateBody(ex));
       setSim(s);
@@ -134,7 +139,14 @@ export function SteadyApp() {
       setBusy(false);
       setLoadingConclusion(false);
     }
-  }, [text, showProfile, profile, resetResults]);
+    },
+    [showProfile, profile, resetResults]
+  );
+
+  const onSubmit = useCallback(async () => {
+    if (!text.trim()) return;
+    await runScenarioText(text.trim());
+  }, [text, runScenarioText]);
 
   const onDemo = useCallback(async () => {
     resetResults();
@@ -196,10 +208,10 @@ export function SteadyApp() {
           {liveGlucose != null && (
             <span
               className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-muted px-3 py-1 font-mono text-foreground"
-              title={cgmLive ? "Demo Nightscout feed" : "Offline fallback"}
+              title={cgmLive ? "Live Nightscout feed" : "Demo CGM feed"}
             >
               <span className={cgmLive ? "h-2 w-2 rounded-full bg-emerald-500" : "h-2 w-2 rounded-full bg-zinc-400"} />
-              CGM {liveGlucose.toFixed(1)} mmol/L
+              {cgmLive ? "Live CGM" : "Demo CGM"} {liveGlucose.toFixed(1)} mmol/L
             </span>
           )}
         </div>
@@ -256,6 +268,7 @@ export function SteadyApp() {
               showProfile={showProfile}
               onToggleProfile={() => setShowProfile((v) => !v)}
               onSubmit={onSubmit}
+              onRunText={runScenarioText}
               onDemo={onDemo}
               busy={busy}
               error={error}
@@ -272,7 +285,7 @@ export function SteadyApp() {
               {error}
             </p>
           )}
-          <GlucoseChart sim={sim} liveReading={liveGlucose} />
+          <GlucoseChart sim={sim} liveReading={liveGlucose} cgmLive={cgmLive} />
         </div>
 
         <AdviceColumn

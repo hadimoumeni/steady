@@ -10,6 +10,7 @@ type Props = {
   showProfile: boolean;
   onToggleProfile: () => void;
   onSubmit: () => void;
+  onRunText: (scenarioText: string) => Promise<void>;
   onDemo: () => void;
   busy: boolean;
   error: string | null;
@@ -27,6 +28,7 @@ export function ScenarioForm({
   showProfile,
   onToggleProfile,
   onSubmit,
+  onRunText,
   onDemo,
   busy,
   error,
@@ -49,7 +51,6 @@ export function ScenarioForm({
       </div>
       <p className="mb-3 text-sm text-muted">
         One short paragraph: current glucose, food, insulin, and planned activity (e.g. football for 60 minutes).
-        Requires an API key on the server for extraction.
       </p>
       <div className="relative">
         <label htmlFor="steady-scenario" className="sr-only">
@@ -136,6 +137,69 @@ export function ScenarioForm({
           className="inline-flex items-center justify-center rounded-xl border border-border bg-surface-muted px-5 py-2.5 text-sm font-medium text-foreground hover:bg-surface-muted/80 disabled:opacity-50"
         >
           Load demo
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void onRunText(
+              "Lena just checked her glucose — she's at 6.8. She had lunch about 90 minutes ago, around 30g of carbs. She took 2 units of NovoRapid about 3 hours ago. She wants to play football for an hour after school at an easy/light pace. Is it safe?"
+            )
+          }
+          className="rounded-xl border border-border bg-surface-muted px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-muted/80 disabled:opacity-50"
+        >
+          Football
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void onRunText(
+              "We're at a birthday party. Lena ate cake and juice about 20 minutes ago — probably 60g of fast carbs. She took 3 units of NovoRapid about 20 minutes ago. Her glucose is 6.2 and she wants to run around with the other kids for the next 2 hours."
+            )
+          }
+          className="rounded-xl border border-border bg-surface-muted px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-muted/80 disabled:opacity-50"
+        >
+          Birthday
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void onRunText(
+              "Lena had porridge for breakfast 45 minutes ago, about 35g of carbs. She took 2 units of NovoRapid about 3 hours ago. Her glucose is 7.4 right now. She has swimming training in 10 minutes — 45 minutes in the pool at moderate pace."
+            )
+          }
+          className="rounded-xl border border-border bg-surface-muted px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-muted/80 disabled:opacity-50"
+        >
+          Swimming
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void onRunText(
+              "Lena's glucose is 8.0 mmol/L right now. She drank juice about 20 minutes ago, around 260g of fast carbs. She took 1 unit of NovoRapid about 5 hours ago. She's going to rest for the afternoon. Is this safe?"
+            )
+          }
+          className="rounded-xl border border-border bg-surface-muted px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-muted/80 disabled:opacity-50"
+        >
+          High start
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void onRunText(
+              "Lena's glucose is 8.5 mmol/L right now. She ate a big fast meal about 20 minutes ago, around 260g of fast carbs. She took 1 unit of NovoRapid about 5 hours ago. She's just going to watch TV and rest for the afternoon. No activity planned."
+            )
+          }
+          className="rounded-xl border border-border bg-surface-muted px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-muted/80 disabled:opacity-50"
+        >
+          Rest day
         </button>
       </div>
     </div>

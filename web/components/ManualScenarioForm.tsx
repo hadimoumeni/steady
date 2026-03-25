@@ -45,7 +45,7 @@ export function ManualScenarioForm({ value, onChange, onRun, busy }: Props) {
       <div>
         <h2 className="text-lg font-semibold text-foreground">Manual scenario</h2>
         <p className="mt-1 text-sm text-muted">
-          Skip AI extraction — numbers go straight to the simulator. Works without an Anthropic API key.
+          Skip AI extraction — numbers go straight to the simulator.
         </p>
       </div>
 
