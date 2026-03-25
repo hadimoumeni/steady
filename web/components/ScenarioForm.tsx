@@ -32,10 +32,7 @@ export function ScenarioForm({
   onDemo,
   busy,
   error,
-  voiceSupported,
-  voiceListening,
   voiceError,
-  onVoice,
 }: Props) {
   return (
     <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
@@ -69,17 +66,7 @@ awake. What do I do?`}
           className="w-full resize-y rounded-xl border border-border bg-background px-4 py-3 pr-24 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
           disabled={busy}
         />
-        {voiceSupported && (
-          <button
-            type="button"
-            onClick={onVoice}
-            disabled={busy || voiceListening}
-            className="absolute bottom-3 right-3 rounded-lg border border-border bg-surface-muted px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-muted/80 disabled:opacity-50"
-            title="Speak your scenario (browser speech recognition)"
-          >
-            {voiceListening ? "Listening…" : "Voice"}
-          </button>
-        )}
+        {/* Voice input button intentionally removed for the hackathon demo. */}
       </div>
       {voiceError && <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">{voiceError}</p>}
 

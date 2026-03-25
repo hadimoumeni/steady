@@ -31,14 +31,18 @@ type Row = {
 };
 
 function buildRows(sim: SimulateResponse): Row[] {
+  const median0 = sim.median[0] ?? 0;
+  const p10_0 = sim.p10[0] ?? median0;
+  const p90_0 = sim.p90[0] ?? median0;
+
   return sim.times.map((t, i) => {
-    const p10 = sim.p10[i] ?? 0;
-    const p90 = sim.p90[i] ?? 0;
+    const p10 = sim.p10[i] ?? p10_0;
+    const p90 = sim.p90[i] ?? p90_0;
     return {
       time: t,
       bandLow: p10,
       bandHeight: Math.max(0, p90 - p10),
-      median: sim.median[i] ?? 0,
+      median: sim.median[i] ?? median0,
       p10,
       p90,
     };
@@ -63,8 +67,21 @@ export function GlucoseChart({
   }
 
   const data = buildRows(sim);
-  const yMin = Math.max(1.5, Math.min(...sim.p10) - 0.5);
-  const yMax = Math.min(30, Math.max(...sim.p90) + 1.5);
+  const p10All = sim.p10 ?? [];
+  const p90All = sim.p90 ?? [];
+  const median0 = sim.median?.[0] ?? 0;
+  const inputGlucose = liveReading ?? median0;
+
+  // If median[0] doesn't align with the patient starting glucose (e.g. live CGM differs),
+  // expand the domain based on p10/p90 to keep the chart readable.
+  const medianAligned =
+    liveReading == null ? true : Math.abs(median0 - inputGlucose) < 1e-6;
+
+  const p10Min = p10All.length ? Math.min(...p10All) : median0;
+  const p90Max = p90All.length ? Math.max(...p90All) : median0;
+
+  const yMin = medianAligned ? inputGlucose : Math.min(0, p10Min) - 0.5;
+  const yMax = Math.max(p90Max + 0.5, yMin + 0.1);
   const dangerAt = sim.danger_entry_minutes;
 
   return (
@@ -193,7 +210,16 @@ export function GlucoseChart({
               isAnimationActive
               animationDuration={ANIM_MS}
             />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Legend
+              wrapperStyle={{ fontSize: 11 }}
+              formatter={(value: unknown, entry: unknown) => {
+                const e = entry as { dataKey?: string } | null | undefined;
+                if (e?.dataKey === "bandHeight") return "Confidence band";
+                if (e?.dataKey === "bandLow") return null; // don't show internal stack segment
+                if (typeof value === "string" || typeof value === "number") return value;
+                return String(value);
+              }}
+            />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
